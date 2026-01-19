@@ -99,7 +99,6 @@ public class sprTeleopBlueNear extends OpMode {
         //Call this once per loop
         follower.update();
         telemetryM.update();
-        launchArtifact();
         if (!automatedDrive) {
             //Make the last parameter false for field-centric
             //In case the drivers want to use a "slowMode" you can scale the vectors
@@ -110,152 +109,6 @@ public class sprTeleopBlueNear extends OpMode {
                     -gamepad1.right_stick_x * fastModeMultiplier,
                     true // Robot Centric
             );
-            if (gamepad1.rightStickButtonWasPressed()) {
-                fastModeMultiplier = 0.75;
-            }
-            if(gamepad1.rightStickButtonWasReleased()){
-                fastModeMultiplier = .3;
-            }
-            if(gamepad1.leftStickButtonWasPressed()){
-                outtake1.setVelocity(0);
-                backspinRoller.setVelocity(0);
-                outtake2.setVelocity(0);
-            }
-            if(gamepad1.dpadUpWasPressed()){
-                cam.setPosition(camPos);
-                if(camPos == 1){
-                    camPos = 0;
-                }
-                else if(camPos == 0){
-                    camPos = 1;
-                }
-            }
-            if(gamepad1.rightBumperWasPressed()){
-                if(count == 3 && count2 == 1){
-                    fanRotate.setPosition(currPosFan);
-                    count = 1;
-                }
-                else if(count == 1){
-                    fanRotate.setPosition(fanPos1);
-                    count++;
-                }
-                else if(count == 2){
-                    fanRotate.setPosition(fanPos2);
-                    count++;
-                }
-                else if(count==3){
-                    fanRotate.setPosition(fanPos3);
-                    count++;
-                }
-                else if(count == 4){
-                    fanRotate.setPosition(fanPos4);
-                    count = 1;
-                }
-            }
-            if(gamepad1.leftBumperWasPressed()){
-                fanRotate.setPosition(fanRotate.getPosition() - .11);
-            }
-            if(gamepad1.dpadRightWasPressed()){
-                if(count2 ==1){
-                    fanRotate.setPosition(upPos3);
-                    count2++;
-                }
-                else if(count2 == 2) {
-                    fanRotate.setPosition(upPos2);
-                    count2++;
-                }
-                else if(count2==3){
-                    fanRotate.setPosition(upPos1);
-                    count2 = 1;
-
-                }
-            }
-            if(gamepad2.dpadDownWasPressed()){
-                park1.setPosition(.75);
-                park2.setPosition(.75);
-                try {
-                    sleep(5000);
-                } catch (InterruptedException e) {
-                    throw new RuntimeException(e);
-                }
-                while(true){
-                    leftRear.setPower(.5);
-                    rightRear.setPower(.5);
-                }
-
-            }
-            if(gamepad2.aWasPressed()){
-                park1.setPosition(.25);
-                park2.setPosition(.25);
-            }
-            if(gamepad2.yWasPressed()){
-                fanRotate.setPosition(currPosFan);
-                count=1;
-            }
-            if(gamepad1.dpadLeftWasPressed()){
-                fanRotate.setPosition(fanRotate.getPosition() - .11);
-            }
-
-//            if(gamepad1.rightBumperWasPressed()){
-//                currPosFan+=.11;
-//                fanRotate.setPosition(currPosFan);
-//            } else if (gamepad1.leftBumperWasPressed()) {
-//                currPosFan-=.11;
-//                fanRotate.setPosition(currPosFan);
-//            }
-//            if(gamepad1.leftBumperWasPressed()){
-//                currPosFan -= .11;
-//                fanRotate.setPosition(currPosFan);
-//            }
-
-            if(gamepad1.aWasPressed()){
-                targetVel=790;
-                rollerVel = 1860;
-                backspinRoller.setDirection(DcMotorSimple.Direction.REVERSE);
-                outtake1.setVelocity(targetVel);
-                backspinRoller.setVelocity(rollerVel);
-                outtake2.setVelocity(targetVel);
-            }
-            if(gamepad1.bWasPressed()){
-                targetVel = 900;
-                rollerVel = 1860;
-                backspinRoller.setDirection(DcMotorSimple.Direction.REVERSE);
-                outtake1.setVelocity(targetVel);
-                backspinRoller.setVelocity(rollerVel);
-                outtake2.setVelocity(targetVel);
-            }
-            if(gamepad1.dpadDownWasPressed() && !artifactRunning){
-                startArtifact();
-            }
-        }
-        if(automatedDrive){
-            if(gamepad1.aWasPressed()){
-                targetVel = 790;
-                rollerVel = 1860;
-                backspinRoller.setDirection(DcMotorSimple.Direction.REVERSE);
-                outtake1.setVelocity(targetVel);
-                backspinRoller.setVelocity(targetVel);
-                outtake2.setVelocity(targetVel);
-            }
-            if(gamepad1.bWasPressed()){
-                targetVel = 900;
-                rollerVel = 1860;
-                backspinRoller.setDirection(DcMotorSimple.Direction.REVERSE);
-                outtake1.setVelocity(targetVel);
-                backspinRoller.setVelocity(rollerVel);
-                outtake2.setVelocity(targetVel);
-            }
-            if(gamepad1.yWasPressed()){
-                automatedDrive = false;
-                follower.breakFollowing();
-                follower.startTeleopDrive();
-            }
-
-            if(gamepad1.xWasPressed()){
-                automatedDrive = false;
-                follower.breakFollowing();
-                follower.startTeleopDrive();
-            }
         }
         if(gamepad1.left_trigger > 0){
             intake.setDirection(DcMotorSimple.Direction.FORWARD);
@@ -272,31 +125,7 @@ public class sprTeleopBlueNear extends OpMode {
             intake.setPower(0);
         }
 
-        if(gamepad2.rightBumperWasPressed()){
-            targetVel+=10;
-            outtake1.setVelocity(targetVel);
-            outtake2.setVelocity(targetVel);
 
-        }
-        if(gamepad2.leftBumperWasPressed()){
-            targetVel-=10;
-            outtake1.setVelocity(targetVel);
-            outtake2.setVelocity(targetVel);
-        }
-        if(gamepad1.yWasPressed()){
-            automatedDrive = true;
-            follower.followPath(pathChain2.get());
-
-        }
-        if(gamepad1.xWasPressed()){
-            automatedDrive = true;
-            follower.followPath(pathChain1.get());
-
-        }
-        if (automatedDrive && !follower.isBusy()) {
-            automatedDrive = false;
-            follower.startTeleopDrive();
-        }
 
 
 

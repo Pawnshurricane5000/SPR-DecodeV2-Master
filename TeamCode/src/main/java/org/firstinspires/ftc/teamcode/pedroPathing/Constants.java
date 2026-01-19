@@ -21,28 +21,21 @@ import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 public class Constants {
     public static FollowerConstants followerConstants = new FollowerConstants()
             .mass(15.649)
-            .forwardZeroPowerAcceleration(-32.3016731626402)
-            .lateralZeroPowerAcceleration(-76.0800713237791)
+            .forwardZeroPowerAcceleration(-32.078248945339)
+            .lateralZeroPowerAcceleration(-70.53982876594944)
             .translationalPIDFCoefficients(new PIDFCoefficients(.1,0,.01,.02))
-            .translationalPIDFSwitch(4)
             .headingPIDFCoefficients(new PIDFCoefficients(1,0,.02,.015))
-            .useSecondaryTranslationalPIDF(false)
-            .useSecondaryHeadingPIDF(false)
-
-
-            .drivePIDFCoefficients(new FilteredPIDFCoefficients(.008,0,.0001,.6,.003));
-
-            //.centripetalScaling(.0005);
-
+            .drivePIDFCoefficients(new FilteredPIDFCoefficients(.005,0,.0001,.6,.003))
+            .centripetalScaling(.0005);
 
     public static PathConstraints pathConstraints = new PathConstraints( 0.99, 100, .7, 1);
     public static PinpointConstants localizerConstants = new PinpointConstants()
             .forwardPodY(7.25)
-            .strafePodX(1)
+            .strafePodX(-2)
             .distanceUnit(DistanceUnit.INCH)
             .hardwareMapName("pinpoint")
             .encoderResolution(GoBildaPinpointDriver.GoBildaOdometryPods.goBILDA_4_BAR_POD)
-            .forwardEncoderDirection(GoBildaPinpointDriver.EncoderDirection.REVERSED)
+            .forwardEncoderDirection(GoBildaPinpointDriver.EncoderDirection.FORWARD)
             .strafeEncoderDirection(GoBildaPinpointDriver.EncoderDirection.REVERSED);
     public static Follower createFollower(HardwareMap hardwareMap) {
         return new FollowerBuilder(followerConstants, hardwareMap)
@@ -59,9 +52,8 @@ public class Constants {
             //leftRear: 2
             //rightRear: 3
             .maxPower(1)
-            .xVelocity(73.25048203355685)
-
-            .yVelocity(55.26839801457923)
+            .xVelocity(80)
+            .yVelocity(60.17292317067544)
             .rightFrontMotorName("rightFront")
             .rightRearMotorName("rightRear")
             .leftRearMotorName("leftRear")
