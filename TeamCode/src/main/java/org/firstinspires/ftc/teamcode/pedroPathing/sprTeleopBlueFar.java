@@ -41,11 +41,16 @@ import com.qualcomm.hardware.limelightvision.Limelight3A;
 public class sprTeleopBlueFar extends OpMode {
     private static final double TURRET_KP = 0.04;
     private double searchDirection = 1.0; // +1 = right, -1 = left
-    private static final double SEARCH_POWER = 0.1;
+    private static final double SEARCH_POWER = .5;
+    boolean turretLocked = false;
+    private static final double CENTER_ENTER = 2.0;
+
+    private static final double CENTER_EXIT = 1.0;
+
+    boolean centering = false;
     private static final double TARGET_X = 2;
     private static final double TARGET_Y = 135;
     private double lastErrorDeg = 0;// start big so you SEE motion
-    private static final double TURRET_MAX_POWER = 0.5;
     private static final int RIGHT_LIMIT = 800;  // ticks – set from your tests
     private static final double KP_TRACK = 0.04;
     private static final double MAX_TRACK_POWER = 0.5;
@@ -57,15 +62,15 @@ public class sprTeleopBlueFar extends OpMode {
     private static final double TICKS_PER_DEGREE = (TICKS_PER_REV * GEAR_RATIO) / 360.0;
 
     // limits in TICKS, not "random 0–250"
-    private static final int TURRET_MIN_TICKS = -100; // example: adjust to your physical left
-    private static final int TURRET_MAX_TICKS = 100; // example: adjust to your physical right
+    private static final int TURRET_MIN_TICKS = -2200; // example: adjust to your physical left
+    private static final int TURRET_MAX_TICKS = 2200; // example: adjust to your physical right
     // Turret encoder limits
     private double lastTurretError = 0;
     private static final double KP = 0.012;
     private static final double KD = 0.008;
 
-    private static final int TURRET_MIN = -200;
-    private static final int TURRET_MAX = 200;
+    private static final int TURRET_MIN = -2200;
+    private static final int TURRET_MAX = 2200;
 
     // Small movement step while searching
     static int SEARCH_STEP = 10;
@@ -113,7 +118,7 @@ public class sprTeleopBlueFar extends OpMode {
     private double turretTarget = 0;
 
     private double turretKp = 0.02;       // smaller gain for smooth centering
-
+    double lastTx = 0.0;
     ElapsedTime artifactTimer = new ElapsedTime();
     boolean artifactRunning = false;
     int artifactState = 0;
@@ -140,6 +145,12 @@ public class sprTeleopBlueFar extends OpMode {
     private int motorVel = 0;
     private int angle = 0;
     private double fastModeMultiplier = .3;
+
+    // Turret constants
+    private static final double TURRET_TICKS_PER_DEGREE = 5.56; // your motor/gear setup
+    private static final double TX_DEADZONE = 4; // degrees
+
+
 
     @Override
     public void init() {
@@ -204,7 +215,7 @@ public class sprTeleopBlueFar extends OpMode {
     public void loop() {
         //Call this once per loop
         follower.update();
-        updateTurretWithOdometry();
+        updateTurretTracking();
 
         if (!automatedDrive) {
             //Make the last parameter false for field-centric
@@ -260,13 +271,13 @@ public class sprTeleopBlueFar extends OpMode {
                 intake.setPower(1);
             }
             if (gamepad2.rightBumperWasPressed()) {
-                turret.setTargetPosition(turret.getTargetPosition() + 50);
+                turret.setPower(1);
             }
             if (gamepad2.leftBumperWasPressed()) {
                 turret.setTargetPosition(turret.getTargetPosition() - 50);
             }
             if (gamepad1.dpadRightWasPressed()) {
-                motorVel = 1150;
+                motorVel = 1200 ;
                 outtake1.setVelocity(motorVel);
                 outtake2.setVelocity(motorVel);
             }
@@ -429,46 +440,74 @@ public class sprTeleopBlueFar extends OpMode {
     }
 
 
-    private void updateTurretWithOdometry() {
-        // Current turret angle in degrees
-        double turretAngleDeg = turret.getCurrentPosition() / TICKS_PER_DEGREE;
 
-        // Robot position & heading
-        Pose pose = follower.getPose();
-        double robotX = pose.getX();
-        double robotY = pose.getY();
-        double robotHeadingDeg = Math.toDegrees(pose.getHeading());
 
-        // Calculate target angle relative to robot
-        double dx = TARGET_X - robotX;
-        double dy = TARGET_Y - robotY;
-        double targetAngleDeg = Math.toDegrees(Math.atan2(dy, dx));
+    // --- Smoothed Turret Tracking ---
 
-        // Error = where we want turret to point minus current turret angle
-        double error = targetAngleDeg - turretAngleDeg;
+    private static final double TURRET_MAX_POWER = 0.4;
+    private static final double TURRET_MIN_POWER = 0.2; // small power so search moves slowly
 
-        // Wrap error to [-180, 180] so turret takes shortest path
-        while (error > 180) error -= 360;
-        while (error < -180) error += 360;
+    private void updateTurretTracking() {
+        limelight.pipelineSwitch(7);
 
-        // PD control
-        double dt = 0.02; // approximate loop time
-        double derivative = (error - lastError) / dt;
-        double power = KP * error + KD * derivative;
+        LLResult result = limelight.getLatestResult();
+        double currentPos = turret.getCurrentPosition();
+        double turretPower = 0.0;
 
-        // Clamp power
-        power = Math.max(-0.4, Math.min(0.4, power));
+        boolean tagDetected = false;
+        double tx = 0;
 
-        // Stop if error is small
-        if (Math.abs(error) < 1.0) power = 0;
-
-        // Enforce hard limits
-        if ((turret.getCurrentPosition() <= TURRET_MIN && power < 0) ||
-                (turret.getCurrentPosition() >= TURRET_MAX && power > 0)) {
-            power = 0;
+        // ---------------- DETECTION ----------------
+        if (result != null && result.isValid()) {
+            List<LLResultTypes.FiducialResult> tags = result.getFiducialResults();
+            if (tags != null && !tags.isEmpty()) {
+                tagDetected = true;
+                tx = tags.get(0).getTargetXDegrees(); // horizontal offset in degrees
+            }
         }
 
-        turret.setPower(power);
-        lastError = error;
+        // ---------------- LOGIC ----------------
+        if (tagDetected) {
+            // ---------- TRACK TARGET ----------
+            if (tx > TX_DEADZONE) {
+                // target is to the right of center → rotate left
+                turretPower = -TURRET_MAX_POWER;
+            } else if (tx < -TX_DEADZONE) {
+                // target is to the left of center → rotate right
+                turretPower = TURRET_MAX_POWER;
+            } else {
+                // within deadzone → stop
+                turretPower = 0;
+            }
+
+        } else {
+            // ---------- SEARCH ----------
+            turretPower = TURRET_MIN_POWER * searchDirection;
+
+            if (currentPos <= TURRET_MIN || currentPos >= TURRET_MAX) {
+                searchDirection *= -1; // bounce off limits
+            }
+        }
+
+        // ---------- ENFORCE HARD LIMITS ----------
+        if ((currentPos <= TURRET_MIN && turretPower < 0) ||
+                (currentPos >= TURRET_MAX && turretPower > 0)) {
+            turretPower = 0;
+        }
+
+        turret.setPower(turretPower);
+
+        // ---------- TELEMETRY ----------
+        telemetry.addData("Turret Pos", currentPos);
+        telemetry.addData("Target Power", turretPower);
+        telemetry.addData("tx", tx);
+        telemetry.addData("Tag Detected", tagDetected);
+        telemetry.addData("Search Dir", searchDirection);
     }
+
+
+
+
+
+
 }
