@@ -39,13 +39,23 @@ import com.qualcomm.hardware.limelightvision.Limelight3A;
 @Configurable
 @TeleOp
 public class sprTeleopBlueFar extends OpMode {
-    private static final double TURRET_KP = 0.04;
+    // Field coordinates for your goal tag center (in same units as Pedro follower)
+    private static final double TAG_X = 6.0;
+    private static final double TAG_Y = 144.0;
+
+    // Turret encoder limits you measured
+    private static final int TURRET_MIN_TICKS = -1000;
+    private static final int TURRET_MAX_TICKS =  1000;
+
+    // Motor/gear
+    private static final double TICKS_PER_REV = 537.7;
+    private static final double GEAR_RATIO    = 1.0; // change if you have gearing
+    private double lastTurretErrorTicks = 0;
+
     private double searchDirection = 1.0; // +1 = right, -1 = left
     private static final double SEARCH_POWER = .5;
     boolean turretLocked = false;
-    private static final double CENTER_ENTER = 2.0;
 
-    private static final double CENTER_EXIT = 1.0;
 
     boolean centering = false;
     private static final double TARGET_X = 2;
@@ -57,20 +67,21 @@ public class sprTeleopBlueFar extends OpMode {
     private static final double CENTER_DEADBAND_DEG = 1.0;
     private boolean scanningRight = true;
     // use your real value here:
-    private static final double TICKS_PER_REV = 537.7;
-    private static final double GEAR_RATIO = 1.0;
+    private static final double TURRET_KP = 0.015;  // from 0.04 → HALF
+    private static final double TURRET_KD = 0.002;  // from 0.004 → HALF
+
+
+    private static final double TURRET_MAX_POWER = 0.25;
     private static final double TICKS_PER_DEGREE = (TICKS_PER_REV * GEAR_RATIO) / 360.0;
 
     // limits in TICKS, not "random 0–250"
-    private static final int TURRET_MIN_TICKS = -2200; // example: adjust to your physical left
-    private static final int TURRET_MAX_TICKS = 2200; // example: adjust to your physical right
     // Turret encoder limits
     private double lastTurretError = 0;
     private static final double KP = 0.012;
     private static final double KD = 0.008;
 
-    private static final int TURRET_MIN = -2200;
-    private static final int TURRET_MAX = 2200;
+    private static final int TURRET_MIN = -1000;
+    private static final int TURRET_MAX = 1000;
 
     // Small movement step while searching
     static int SEARCH_STEP = 10;
@@ -85,8 +96,11 @@ public class sprTeleopBlueFar extends OpMode {
     private double kP = F * .1;
     private double kI = kP * .1;
     private double kD = 0;
-    private double pos = 5.0;
 
+    private double Ftur = 32767.0 / maxVelocityOuttake;
+    private double kPtur = F * .1;
+    private double kItur = kP * .1;
+    private double kDtur = 0;
     private Follower follower;
     private int[] c1Def = {713, 1311, 1164};
     private int[] c2Def = {392, 895, 767};
@@ -107,6 +121,7 @@ public class sprTeleopBlueFar extends OpMode {
     private Supplier<PathChain> pathChain1, pathChain2;
     private TelemetryManager telemetryM;
     private Integer lockedTagId = null;
+    private static final double VISION_BLEND = 0.05; // small weight for tx correction
     private ElapsedTime tagLostTimer = new ElapsedTime();
     private static final double TAG_LOST_TIMEOUT = 0.4; // seconds     // proportional gain
     private double turretKd = 0.008;      // derivative gain
@@ -118,7 +133,7 @@ public class sprTeleopBlueFar extends OpMode {
     private double turretTarget = 0;
 
     private double turretKp = 0.02;       // smaller gain for smooth centering
-    double lastTx = 0.0;
+    double lastTx = 0;
     ElapsedTime artifactTimer = new ElapsedTime();
     boolean artifactRunning = false;
     int artifactState = 0;
@@ -133,6 +148,9 @@ public class sprTeleopBlueFar extends OpMode {
     private double lastError = 0;
     private boolean slowMode = false;
     private int turretPos = 0;
+    private ElapsedTime searchTimer = new ElapsedTime();
+    private boolean searching = false;
+    private double searchPower = 0.15;
 
     private double currPosFan = .05, camPos = 1, currRelease = -.01;
     private double fanPos1 = .1, fanPos2 = .145, fanPos3 = .195, fanPos4 = .24;
@@ -148,8 +166,6 @@ public class sprTeleopBlueFar extends OpMode {
 
     // Turret constants
     private static final double TURRET_TICKS_PER_DEGREE = 5.56; // your motor/gear setup
-    private static final double TX_DEADZONE = 4; // degrees
-
 
 
     @Override
@@ -190,7 +206,7 @@ public class sprTeleopBlueFar extends OpMode {
         turret.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
         turret.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         turret.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
-        limelight.setPollRateHz(100); // This sets how often we ask Limelight for data (100 times per second)
+        limelight.setPollRateHz(30); // This sets how often we ask Limelight for data (100 times per second)
         limelight.start();
         outtake2.setDirection(DcMotorSimple.Direction.REVERSE);
         outtake1.setVelocityPIDFCoefficients(kP, kI, kD, F);
@@ -209,56 +225,39 @@ public class sprTeleopBlueFar extends OpMode {
         arm3.setPosition(0);
         turret.setPower(0); // start stopped
         shooterAngle.setPosition(1);
+        searchTimer = new ElapsedTime();
+
     }
 
     @Override
     public void loop() {
         //Call this once per loop
-        follower.update();
         updateTurretTracking();
-
-        if (!automatedDrive) {
+        updateArmShooter();
+        follower.update();
             //Make the last parameter false for field-centric
             //In case the drivers want to use a "slowMode" you can scale the vectors
             //This is the normal version to use in the TeleOp
-            follower.setTeleOpDrive(
+        follower.setTeleOpDrive(
                     -gamepad1.left_stick_y * fastModeMultiplier,
                     -gamepad1.left_stick_x * fastModeMultiplier,
                     -gamepad1.right_stick_x * fastModeMultiplier,
                     true // Robot Centric
-            );
-            if (gamepad1.rightStickButtonWasPressed()) {
-                fastModeMultiplier = 1;
-            }
-            if (gamepad1.rightStickButtonWasReleased()) {
-                fastModeMultiplier = .5;
-            }
-            if (gamepad1.aWasPressed()) {
-                arm1.setPosition(1);
-                try {
-                    sleep(200);
-                } catch (InterruptedException e) {
-                    throw new RuntimeException(e);
-                }
-                arm1.setPosition(0);
-            }
+        );
+        if (gamepad1.rightStickButtonWasPressed()) {
+            fastModeMultiplier = .5;
+        }
+        if (gamepad1.rightStickButtonWasReleased()) {
+            fastModeMultiplier = .9;
+        }
+        if (gamepad1.aWasPressed()) {
+            fireArmNonBlocking(arm1);
+        }
             if (gamepad1.bWasPressed()) {
-                arm2.setPosition(1);
-                try {
-                    sleep(200);
-                } catch (InterruptedException e) {
-                    throw new RuntimeException(e);
-                }
-                arm2.setPosition(0);
+                fireArmNonBlocking(arm2);
             }
             if (gamepad1.xWasPressed()) {
-                arm3.setPosition(1);
-                try {
-                    sleep(200);
-                } catch (InterruptedException e) {
-                    throw new RuntimeException(e);
-                }
-                arm3.setPosition(0);
+                fireArmNonBlocking(arm3);
             }
             if (gamepad1.left_trigger > 0) {
                 intake.setDirection(DcMotorSimple.Direction.REVERSE);
@@ -270,16 +269,17 @@ public class sprTeleopBlueFar extends OpMode {
                 intake.setDirection(DcMotorSimple.Direction.FORWARD);
                 intake.setPower(1);
             }
-            if (gamepad2.rightBumperWasPressed()) {
-                turret.setPower(1);
-            }
-            if (gamepad2.leftBumperWasPressed()) {
-                turret.setTargetPosition(turret.getTargetPosition() - 50);
-            }
             if (gamepad1.dpadRightWasPressed()) {
-                motorVel = 1200 ;
+                motorVel = 1150;
                 outtake1.setVelocity(motorVel);
                 outtake2.setVelocity(motorVel);
+                shooterAngle.setPosition(1);
+            }
+            if(gamepad1.dpadLeftWasPressed()){
+                motorVel = 1300;
+                outtake1.setVelocity(motorVel);
+                outtake2.setVelocity(motorVel);
+                shooterAngle.setPosition(.4);
             }
             if (gamepad1.leftStickButtonWasPressed()) {
                 outtake1.setPower(0);
@@ -290,55 +290,23 @@ public class sprTeleopBlueFar extends OpMode {
                 outtake1.setVelocity(motorVel);
                 outtake2.setVelocity(motorVel);
             }
-            if (gamepad1.dpadUpWasPressed()) {
+            if (gamepad1.dpadDownWasPressed()) {
                 motorVel -= 50;
                 outtake1.setVelocity(motorVel);
                 outtake2.setVelocity(motorVel);
             }
             if (gamepad2.dpadUpWasPressed()) {
-                shooterAngle.setPosition(1);
+                shooterAngle.setPosition(.7);
             }
             if (gamepad2.dpadDownWasPressed()) {
-                shooterAngle.setPosition(.5);
+                shooterAngle.setPosition(1);
             }
-            if (gamepad1.right_trigger <= 0) {
+            if (gamepad1.right_trigger <= 0 && gamepad1.left_trigger <= 0) {
                 intake.setPower(0);
             }
             if (gamepad1.yWasPressed()) {
-                arm1.setPosition(1);
-                try {
-                    sleep(200);
-                } catch (InterruptedException e) {
-                    throw new RuntimeException(e);
-                }
-                arm1.setPosition(0);
-                try {
-                    sleep(250);
-                } catch (InterruptedException e) {
-                    throw new RuntimeException(e);
-                }
-                arm2.setPosition(1);
-                try {
-                    sleep(200);
-                } catch (InterruptedException e) {
-                    throw new RuntimeException(e);
-                }
-                arm2.setPosition(0);
-                try {
-                    sleep(250);
-                } catch (InterruptedException e) {
-                    throw new RuntimeException(e);
-                }
-                arm3.setPosition(1);
-                try {
-                    sleep(200);
-                } catch (InterruptedException e) {
-                    throw new RuntimeException(e);
-                }
-                arm3.setPosition(0);
-
+                shootInOrder(22);
             }
-        }
 //        String c1Color = detectColor(c1);
 //        String c2Color = detectColor(c2);
 //        String c3Color = detectColor(c3);
@@ -359,15 +327,44 @@ public class sprTeleopBlueFar extends OpMode {
         telemetry.addData("C1 Color", c1Color);
         telemetry.addData("C2 Color", c2Color);
         telemetry.addData("C3 Color", c3Color);
-        telemetry.addData("Motor Vel 1: ", outtake1.getVelocity());
-        telemetry.addData("Motor Vel 2: ", outtake2.getVelocity());
-        telemetry.addData("Turret Pos: ", turret.getCurrentPosition());
-        telemetry.addData("ENCODER LIVE", turret.getCurrentPosition());
         telemetry.update();
 
         telemetry.update();
 
 
+    }
+    enum ArmState {
+        IDLE,
+        EXTEND,
+        RETRACT
+    }
+
+    ArmState armState = ArmState.IDLE;
+    long armTimer = 0;
+    Servo activeArm = null;
+
+    public void updateArmShooter() {
+        long now = System.currentTimeMillis();
+
+        switch (armState) {
+            case IDLE:
+                break;
+
+            case EXTEND:
+                if (now - armTimer > 200) {
+                    activeArm.setPosition(0);
+                    armState = ArmState.RETRACT;
+                    armTimer = now;
+                }
+                break;
+
+            case RETRACT:
+                if (now - armTimer > 250) {
+                    armState = ArmState.IDLE;
+                    activeArm = null;
+                }
+                break;
+        }
     }
 
     private String detectColor1(ColorSensor c) {
@@ -385,10 +382,10 @@ public class sprTeleopBlueFar extends OpMode {
         float val = hsv[2];       // 0-1
 
         // Green range (tweak if needed)
-        if (hue > 160 && hue < 170 && sat > 0.45 && val > 5) return "GREEN";
+        if (hue > 150 && hue < 170 && sat > 0.5) return "GREEN";
 
         // Purple range (tweak if needed)
-        if (hue > 170 && sat < .5 && val < 5.6) return "PURPLE";
+        if (hue > 180 && sat < .45) return "PURPLE";
 
         return "UNKNOWN";
     }
@@ -397,7 +394,7 @@ public class sprTeleopBlueFar extends OpMode {
         // Check proximity first (distance to object)
         if (c instanceof DistanceSensor) {
             double distance = ((DistanceSensor) c).getDistance(DistanceUnit.MM);
-            if (distance > 60) return "NONE"; // No ball in front
+            if (distance > 70) return "NONE"; // No ball in front
         }
 
         // Convert RGB to HSV
@@ -408,10 +405,10 @@ public class sprTeleopBlueFar extends OpMode {
         float val = hsv[2];       // 0-1
 
         // Green range (tweak if needed)
-        if (hue > 160 && hue < 170 && sat > .57 && val > 3.5) return "GREEN";
+        if (hue > 160 && hue < 170 && sat > .6) return "GREEN";
 
         // Purple range (tweak if needed)
-        if (hue > 160 && hue < 170 && sat < .57 && val > 3.5) return "PURPLE";
+        if (hue > 180 && sat < .53) return "PURPLE";
 
         return "UNKNOWN";
     }
@@ -431,10 +428,10 @@ public class sprTeleopBlueFar extends OpMode {
         float val = hsv[2];       // 0-1
 
         // Green range (tweak if needed)
-        if (hue > 160 && hue < 170 && sat > 0.45 && val > 3.5) return "GREEN";
+        if (hue > 150 && hue < 160 && sat > 0.6) return "GREEN";
 
         // Purple range (tweak if needed)
-        if (hue > 170 && sat < .5 && val < 5) return "PURPLE";
+        if (hue > 200 && sat < .5) return "PURPLE";
 
         return "UNKNOWN";
     }
@@ -444,66 +441,206 @@ public class sprTeleopBlueFar extends OpMode {
 
     // --- Smoothed Turret Tracking ---
 
-    private static final double TURRET_MAX_POWER = 0.4;
-    private static final double TURRET_MIN_POWER = 0.2; // small power so search moves slowly
+
+    private static final double TURRET_MIN_POWER = .7; // small power so search moves slowly
+
+    private static final double TX_DEADZONE = 1.5; // degrees
+    private static final double MAX_TURRET_VEL = 800; // ticks/sec max
+    private static final double MIN_TURRET_VEL = 100; // slow near center
+
+    private static final double CENTER_ENTER = 2.0; // deg: lock when inside
+    private static final double CENTER_EXIT  = 3.0; // deg: unlock when outside
+    private static final double TRACK_KP     = 0.02;
+    private static final double MAX_POWER    = .4;
+    private boolean turretCentered = false;
+    private static final double CENTER_OFFSET_DEG = 1.2; // aim left of tag
 
     private void updateTurretTracking() {
         limelight.pipelineSwitch(7);
 
         LLResult result = limelight.getLatestResult();
-        double currentPos = turret.getCurrentPosition();
-        double turretPower = 0.0;
-
-        boolean tagDetected = false;
+        boolean tagSeen = false;
         double tx = 0;
 
-        // ---------------- DETECTION ----------------
-        if (result != null && result.isValid()) {
-            List<LLResultTypes.FiducialResult> tags = result.getFiducialResults();
-            if (tags != null && !tags.isEmpty()) {
-                tagDetected = true;
-                tx = tags.get(0).getTargetXDegrees(); // horizontal offset in degrees
-            }
+        if (result != null && result.isValid()
+                && result.getFiducialResults() != null
+                && !result.getFiducialResults().isEmpty()) {
+
+            tx = result.getFiducialResults().get(0).getTargetXDegrees();
+            tagSeen = true;
         }
 
-        // ---------------- LOGIC ----------------
-        if (tagDetected) {
-            // ---------- TRACK TARGET ----------
-            if (tx > TX_DEADZONE) {
-                // target is to the right of center → rotate left
-                turretPower = -TURRET_MAX_POWER;
-            } else if (tx < -TX_DEADZONE) {
-                // target is to the left of center → rotate right
-                turretPower = TURRET_MAX_POWER;
+        int pos = turret.getCurrentPosition();
+        boolean atLeftLimit  = pos <= -995;
+        boolean atRightLimit = pos >=  995;
+
+        double power = 0;
+
+        if (tagSeen) {
+            // ---------------- VAW VISION TRACK ----------------
+            double errorDeg = -(tx - CENTER_OFFSET_DEG);
+
+            // HYSTERESIS LOCK
+            if (!turretCentered && Math.abs(errorDeg) < CENTER_ENTER) {
+                turretCentered = true;
+            }
+            if (turretCentered && Math.abs(errorDeg) > CENTER_EXIT) {
+                turretCentered = false;
+            }
+
+            if (!turretCentered) {
+                power = TRACK_KP * errorDeg;
+                power = Math.max(-MAX_POWER, Math.min(MAX_POWER, power));
             } else {
-                // within deadzone → stop
-                turretPower = 0;
+                power = 0;
+            }
+
+            // Hard stop at limits
+            if ((atLeftLimit && power < 0) || (atRightLimit && power > 0)) {
+                power = 0;
             }
 
         } else {
-            // ---------- SEARCH ----------
-            turretPower = TURRET_MIN_POWER * searchDirection;
+            // ---------------- FAST SEARCH ----------------
+            turretCentered = false;
 
-            if (currentPos <= TURRET_MIN || currentPos >= TURRET_MAX) {
-                searchDirection *= -1; // bounce off limits
+            power = searchDirection * 0.22;
+
+            if (atLeftLimit)  searchDirection = 1;
+            if (atRightLimit) searchDirection = -1;
+        }
+
+        turret.setPower(power);
+
+        telemetry.addData("TX", String.format("%.2f", tx));
+        telemetry.addData("ErrDeg", String.format("%.2f", -(tx - CENTER_OFFSET_DEG)));
+        telemetry.addData("Centered", turretCentered);
+        telemetry.addData("Power", String.format("%.2f", power));
+    }
+
+
+
+
+
+
+
+
+
+
+    private static final int TARGET_TAG_ID = 20; // or whatever ID your goal tag has
+
+    private double getVisionCorrectionRadians() {
+        LLResult result = limelight.getLatestResult();
+        if (result == null || !result.isValid()) return 0;
+
+        List<LLResultTypes.FiducialResult> tags = result.getFiducialResults();
+        if (tags == null || tags.isEmpty()) return 0;
+
+        // If you care about a specific ID, pick that one
+        LLResultTypes.FiducialResult chosen = null;
+        for (LLResultTypes.FiducialResult f : tags) {
+            if (f.getFiducialId() == TARGET_TAG_ID) {
+                chosen = f;
+                break;
             }
         }
-
-        // ---------- ENFORCE HARD LIMITS ----------
-        if ((currentPos <= TURRET_MIN && turretPower < 0) ||
-                (currentPos >= TURRET_MAX && turretPower > 0)) {
-            turretPower = 0;
+        if (chosen == null) {
+            // or just use the first tag if any tag is okay
+            chosen = tags.get(0);
         }
 
-        turret.setPower(turretPower);
+        double txDeg = chosen.getTargetXDegrees(); // +right, -left, camera-space
+        double txRad = Math.toRadians(txDeg);
 
-        // ---------- TELEMETRY ----------
-        telemetry.addData("Turret Pos", currentPos);
-        telemetry.addData("Target Power", turretPower);
-        telemetry.addData("tx", tx);
-        telemetry.addData("Tag Detected", tagDetected);
-        telemetry.addData("Search Dir", searchDirection);
+        // Negative so positive tx (tag to right) -> rotate turret left
+        return 0;
     }
+
+
+
+
+
+    public void fireArmNonBlocking(Servo arm) {
+        if (armState == ArmState.IDLE) {
+            activeArm = arm;
+            arm.setPosition(1);
+            armTimer = System.currentTimeMillis();
+            armState = ArmState.EXTEND;
+        }
+    }
+
+
+    private String[] getDesiredPattern(int num) {
+        switch (num) {
+            case 21: return new String[]{"GREEN", "PURPLE", "PURPLE"}; // GPP
+            case 22: return new String[]{"PURPLE", "GREEN", "PURPLE"}; // PGP
+            case 23: return new String[]{"PURPLE", "PURPLE", "GREEN"}; // PPG
+            default: return null;
+        }
+    }
+    public void shootInOrder(int num) {
+
+        String col1 = detectColor1(c1);
+        String col2 = detectColor2(c2);
+        String col3 = detectColor3(c3);
+
+        // Arrays to keep things clean
+        String[] colors = {col1, col2, col3};
+        Servo[] arms   = {arm1, arm2, arm3};
+
+        String[] pattern;
+
+        if (num == 21)      pattern = new String[]{"GREEN", "PURPLE", "PURPLE"};
+        else if (num == 22) pattern = new String[]{"PURPLE", "GREEN", "PURPLE"};
+        else if (num == 23) pattern = new String[]{"PURPLE", "PURPLE", "GREEN"};
+        else return; // invalid number
+
+        boolean[] used = {false, false, false};
+
+        // Shoot in pattern order
+        for (String targetColor : pattern) {
+            for (int i = 0; i < 3; i++) {
+                if (!used[i] && colors[i].equals(targetColor)) {
+                    fireArmNonBlocking(arms[i]);
+                    used[i] = true;
+                    break;
+                }
+            }
+        }
+    }
+    private double ticksPerRad() {
+        return (TICKS_PER_REV * GEAR_RATIO) / (2.0 * Math.PI);
+    }
+
+    private double turretAnglePid(double targetTicks) {
+        int currentTicks = turret.getCurrentPosition();
+        double error = targetTicks - currentTicks;
+        if (Math.abs(error) < 20) {  // 20 ticks = ~3.5° deadband
+            return 0;
+        }
+
+        double dError = error - lastTurretErrorTicks;
+        lastTurretErrorTicks = error;
+
+        double output = TURRET_KP * error + TURRET_KD * dError;
+
+        // clamp power
+        if (output > TURRET_MAX_POWER)  output = TURRET_MAX_POWER;
+        if (output < -TURRET_MAX_POWER) output = -TURRET_MAX_POWER;
+
+        // enforce encoder limits
+        if ((currentTicks <= TURRET_MIN_TICKS && output < 0) ||
+                (currentTicks >= TURRET_MAX_TICKS && output > 0)) {
+            output = 0;
+        }
+
+        return output;
+    }
+
+
+
+
+
 
 
 
