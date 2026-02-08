@@ -52,7 +52,7 @@ public class Constants {
             //leftRear: 2
             //rightRear: 3
             .maxPower(1)
-            .xVelocity(80)
+            .xVelocity(90)
             .yVelocity(60.17292317067544)
             .rightFrontMotorName("rightFront")
             .rightRearMotorName("rightRear")
