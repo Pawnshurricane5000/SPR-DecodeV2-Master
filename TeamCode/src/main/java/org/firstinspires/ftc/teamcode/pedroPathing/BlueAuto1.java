@@ -65,7 +65,7 @@ public class BlueAuto1 extends OpMode {
 
     private double maxVelocityOuttake = 2400;
     private double F = 32767.0 / maxVelocityOuttake;
-    private double kP = F * 1.2;
+    private double kP = F * 5;
     private double kI = 0;
     private double kD = 0;
     private boolean x = true;
@@ -88,7 +88,7 @@ public class BlueAuto1 extends OpMode {
     private DcMotorSimple rightFront, leftFront, rightRear, leftRear;
 
     private ElapsedTime searchTimer = new ElapsedTime();
-    private boolean[] pathTriggered = new boolean[10]; // support up to 10 pathStates
+    private boolean[] pathTriggered = new boolean[100]; // support up to 10 pathStates
 
     private int motorVel = 0;
     private double fastModeMultiplier = .3;
@@ -96,16 +96,16 @@ public class BlueAuto1 extends OpMode {
     private boolean hasShot = false;
 
     private final Pose startPose = new Pose(60, 6, Math.toRadians(270)); // Start Pose of our robot.
-    private final Pose order3 = new Pose(60, 54.5, Math.toRadians(180)); // Middle (Second Set) of Artifacts from the Spike Mark.
-    private final Pose order32 = new Pose(13, 54.5, Math.toRadians(180)); // Middle (Second Set) of Artifacts from the Spike Mark.
-    private final Pose order2 = new Pose(60, 78.5, Math.toRadians(180)); // Middle (Second Set) of Artifacts from the Spike Mark.
+    private final Pose order3 = new Pose(80, 30.5, Math.toRadians(180)); // Middle (Second Set) of Artifacts from the Spike Mark.
+    private final Pose order32 = new Pose(11, 30.5, Math.toRadians(180)); // Middle (Second Set) of Artifacts from the Spike Mark.
+    private final Pose order2 = new Pose(60, 54.5, Math.toRadians(180)); // Middle (Second Set) of Artifacts from the Spike Mark.
     private final Pose order2s = new Pose(40,78.5,Math.toRadians(180));
     private final Pose order21 = new Pose(30, 78.5, Math.toRadians(180)); // Middle (Second Set) of Artifacts from the Spike Mark.
-    private final Pose order22 = new Pose(20, 78.5, Math.toRadians(180));
-    private final Pose park = new Pose(50, 30.5, Math.toRadians(180));
-    private final Pose order1s = new Pose(40,30.5,Math.toRadians(180));
-    private final Pose order11 = new Pose(36, 30.5, Math.toRadians(180)); // Middle (Second Set) of Artifacts from the Spike Mark.
-    private final Pose order12 = new Pose(28, 30.5, Math.toRadians(180)); // Middle (Second Set) of Artifacts from the Spike Mark.
+    private final Pose order22 = new Pose(11, 54.5, Math.toRadians(180));
+    private final Pose park = new Pose(50, 54.5, Math.toRadians(180));
+    private final Pose order1s = new Pose(40,54.5,Math.toRadians(180));
+    private final Pose order11 = new Pose(36, 54.5, Math.toRadians(180)); // Middle (Second Set) of Artifacts from the Spike Mark.
+    private final Pose order12 = new Pose(28, 54.5, Math.toRadians(180)); // Middle (Second Set) of Artifacts from the Spike Mark.
     // Middle (Second Set) of Artifacts from the Spike Mark.
     private Path detect;
     private PathChain launch, launch3,moveToLaunch2, moveToOrder3,moveToOrder31,moveToOrder32,moveToLaunch1, moveToOrder2,moveToOrder21,moveToOrder22,moveToOrder2s, parkP, moveToOrder11,moveToOrder12,moveToOrder1s;
@@ -138,89 +138,80 @@ public class BlueAuto1 extends OpMode {
     }
     public void autonomousPathUpdate() {
 
-        switch (pathState) {
+        switch (pathState) {            case 0: // Start first shot
+            // Spin up flywheels
+            outtake1.setVelocity(1400);
+            outtake2.setVelocity(1400);
 
-            case 0:
-                // Spin up flywheels
-                outtake1.setVelocity(1400);
-                outtake2.setVelocity(1400);
+            // Start shooting once at speed
+            if (!hasShot && outtake1.getVelocity() >= 1350) {
+                startShooting();
+                hasShot = true;
+            }
 
-                // Start shooting once at speed
-                if (!hasShot && outtake1.getVelocity() >= 1370) {
-                    startShooting();
-                    hasShot = true;
-                }
+            // Move on once shooting is finished
+            if (hasShot && !shooting) {
+                setPathState(1);
+            }
+            break;
 
-                // Move on once shooting is finished
-                if (hasShot && !shooting) {
-                    setPathState(1);
-                }
-                break;
-
-            case 1:
+            case 1: // Drive to the first collection line
                 if (!pathTriggered[1]) {
                     intake.setPower(1);
-                    follower.followPath(moveToOrder3); // first artifact path
+                    follower.followPath(moveToOrder3);
                     pathTriggered[1] = true;
                 }
 
-                // In case 1:
                 if (!follower.isBusy() && pathTriggered[1]) {
-                   pathTriggered[1] = false; // reset for next use
-                    setPathState(10);
+                    pathTriggered[1] = false;
+                    setPathState(10); // Transition to the next state for the sideways move
                 }
-
                 break;
-            case 10: // NEW STATE: Move sideways along the artifact line
-                if (!pathTriggered[9]) {
+
+            case 10: // Move sideways to collect first set of artifacts
+                if (!pathTriggered[10]) {
                     follower.followPath(moveToOrder32);
-                    pathTriggered[9] = true;
+                    pathTriggered[10] = true;
                 }
 
-                // When done, prepare for the next shooting cycle
-                if (!follower.isBusy() && pathTriggered[9]) {
-                    pathTriggered[9] = false;
+                if (!follower.isBusy() && pathTriggered[10]) {
+                    pathTriggered[10] = false;
                     hasShot = false; // Reset for the next shot
+                    turret.setTargetPosition(turret.getCurrentPosition()-30);
                     setPathState(2); // Now go back to launch
                 }
                 break;
 
-            case 2:
-                // In case 2:
+            case 2: // Return to launch for the second shot
                 if (!pathTriggered[2]) {
-                    follower.followPath(moveToLaunch1); // back to shooting
+                    follower.followPath(moveToLaunch1);
                     pathTriggered[2] = true;
                 }
 
+                // When path is done, start the shooting sequence
                 if (!follower.isBusy() && pathTriggered[2]) {
-                    // Spin up flywheels for second shot
-                    outtake1.setVelocity(1400);
-                    outtake2.setVelocity(1400);
-
-                    // This condition will now work since hasShot was reset in case 1
-                    if (!hasShot && outtake1.getVelocity() >= 1350) {
-                        startShooting();
-                        hasShot = true;
-                    }
-
-                    // This check should be separate to allow the shooting sequence to complete
-                    if (hasShot && !shooting) {
-                        pathTriggered[2] = false;
-                        setPathState(3);
-                    }
+                    pathTriggered[2] = false;
+                    setPathState(20); // Transition to a dedicated shooting state
                 }
-                break; // End of case 2
+                break;
 
+            case 20: // Perform the second shot
+                outtake1.setVelocity(1400);
+                outtake2.setVelocity(1400);
 
-            case 3:
+                if (!hasShot && outtake1.getVelocity() >= 1290) {
+                    startShooting();
+                    hasShot = true;
+                }
+
+                if (hasShot && !shooting) {
+                    setPathState(3); // Move on to the next collection cycle
+                }
+                break;
+
+            case 3: // Drive to the second collection line
                 if (!pathTriggered[3]) {
-                    hasShot = false;// In case 1:
-                    if (!follower.isBusy() && pathTriggered[1]) {
-                        // follower.followPath(moveToOrder3); // This line appears to be a duplicate. Remove it.
-                        pathTriggered[1] = false; // reset for next use
-                        hasShot = false; // <-- ADD THIS LINE to reset for the next shot
-                        setPathState(2);
-                    }
+                    hasShot = false; // Reset for the final shot cycle
                     intake.setPower(1);
                     follower.followPath(moveToOrder2);
                     pathTriggered[3] = true;
@@ -228,40 +219,46 @@ public class BlueAuto1 extends OpMode {
 
                 if (!follower.isBusy() && pathTriggered[3]) {
                     pathTriggered[3] = false;
-                    setPathState(4);
+                    setPathState(4); // Transition to the sideways move
                 }
                 break;
 
-            case 4:
+            case 4: // Move sideways to collect the second set of artifacts
                 if (!pathTriggered[4]) {
-                    follower.followPath(moveToOrder22); // move to final artifact
+                    follower.followPath(moveToOrder22);
                     pathTriggered[4] = true;
                 }
 
                 if (!follower.isBusy() && pathTriggered[4]) {
+                    turret.setTargetPosition(turret.getCurrentPosition()-30);
                     pathTriggered[4] = false;
-
-                    follower.followPath(moveToLaunch2); // back to launch zone
-                    setPathState(5);
+                    setPathState(40); // Transition to the return path
                 }
                 break;
 
-            case 5:
-                if (!pathTriggered[5]) {
-                    // This part is fine, it just ensures the flywheels are spun up once.
-                    outtake1.setVelocity(1400);
-                    outtake2.setVelocity(1400);
-                    pathTriggered[5] = true;
+            case 40: // Return to launch for the final shot
+                if (!pathTriggered[40]) {
+                    follower.followPath(moveToLaunch2);
+                    pathTriggered[40] = true;
                 }
 
-                // ADD THIS SHOOTING LOGIC - This is missing from your original code.
-                // Start shooting once at speed.
-                if (!hasShot && outtake1.getVelocity() >= 1350) {
+                if (!follower.isBusy() && pathTriggered[40]) {
+                    pathTriggered[40] = false;
+                    setPathState(5); // Transition to the final shooting state
+                }
+                break;
+
+            case 5: // Perform the final shot
+                outtake1.setVelocity(1400);
+                outtake2.setVelocity(1400);
+
+                // Start shooting once at speed
+                if (!hasShot && outtake1.getVelocity() >= 1290) {
                     startShooting();
                     hasShot = true;
                 }
 
-                // NOW, check if the shooting is done.
+                // Check if the shooting is done
                 if (hasShot && !shooting) {
                     setPathState(-1); // End of autonomous routine
                 }
@@ -272,9 +269,11 @@ public class BlueAuto1 extends OpMode {
                 intake.setPower(0);
                 outtake1.setVelocity(0);
                 outtake2.setVelocity(0);
+                follower.breakFollowing(); // Command the follower to stop all movement
                 break;
         }
     }
+
 
 
 
@@ -493,7 +492,7 @@ public class BlueAuto1 extends OpMode {
             shootStep = 2;
         }
 
-        else if (shootStep == 2 && shootTimer.milliseconds() >= 350) {
+        else if (shootStep == 2 && shootTimer.milliseconds() >= 250) {
             arm2.setPosition(1);
             shootTimer.reset();
             shootStep = 3;
@@ -505,7 +504,7 @@ public class BlueAuto1 extends OpMode {
             shootStep = 4;
         }
 
-        else if (shootStep == 4 && shootTimer.milliseconds() >= 350) {
+        else if (shootStep == 4 && shootTimer.milliseconds() >= 250) {
             arm3.setPosition(1);
             shootTimer.reset();
             shootStep = 5;

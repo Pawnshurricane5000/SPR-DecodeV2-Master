@@ -22,7 +22,7 @@ import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.DistanceSensor;
 import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.util.ElapsedTime;
-
+import com.qualcomm.hardware.rev.RevBlinkinLedDriver;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 
 import java.util.function.Supplier;
@@ -32,18 +32,19 @@ import com.qualcomm.hardware.limelightvision.LLResult;
 @TeleOp
 public class sprTeleopBlue extends OpMode {
     // Field coordinates for your goal tag center (in same units as Pedro follower)
+    private ElapsedTime runTime = new ElapsedTime();
     private double searchDirection = 1.0; // +1 = right, -1 = left
-
+    private RevBlinkinLedDriver ledLights;
     private double maxVelocityOuttake = 2400;
     private double F = 32767.0 / maxVelocityOuttake;
-    private double kP = F * .1;
+    private double kP = F * 1.2;
     private double kI = 0;
     private double kD = 0;
     private Follower follower;
 
     private Limelight3A limelight;
     private ColorSensor c1, c2, c3;
-    private Servo fanRotate, cam, park1, park2, arm1, arm2, arm3, shooterAngle;
+    private Servo fanRotate, cam, park1, park2, arm1, arm2, arm3, shooterAngle, lift1, lift2;
     private DcMotorEx outtake1, backspinRoller, outtake2, turret;
     private DcMotorSimple intake, rightFront, leftFront, rightRear, leftRear;
     private Supplier<PathChain> pathChain1, pathChain2;
@@ -67,6 +68,7 @@ public class sprTeleopBlue extends OpMode {
         follower = Constants.createFollower(hardwareMap);
         follower.setStartingPose(new Pose(60, 6, Math.toRadians(-90)));
         follower.update();
+        ledLights = hardwareMap.get(RevBlinkinLedDriver.class, "ledLights");
         arm1 = hardwareMap.get(Servo.class, "arm1");
         arm2 = hardwareMap.get(Servo.class, "arm2");
         arm3 = hardwareMap.get(Servo.class, "arm3");
@@ -78,6 +80,8 @@ public class sprTeleopBlue extends OpMode {
         c1 = hardwareMap.get(ColorSensor.class, "c1");
         c2 = hardwareMap.get(ColorSensor.class, "c2");
         c3 = hardwareMap.get(ColorSensor.class, "c3");
+        lift1 = hardwareMap.get(Servo.class, "lift1");
+        lift2 = hardwareMap.get(Servo.class, "lift2");
         leftFront = hardwareMap.get(DcMotorSimple.class, "leftFront");
         leftRear = hardwareMap.get(DcMotorSimple.class, "leftRear");
         rightRear = hardwareMap.get(DcMotorSimple.class, "rightRear");
@@ -113,11 +117,15 @@ public class sprTeleopBlue extends OpMode {
         //In order to use float mode, add .useBrakeModeInTeleOp(true); to your Drivetrain Constants in Constant.java (for Mecanum)
         //If you don't pass anything in, it uses the default (false)
         follower.startTeleopDrive();
+        lift1.setPosition(0);
+        lift2.setPosition(0);
         arm1.setPosition(0);
         arm2.setPosition(0);
         arm3.setPosition(0);
         turret.setPower(0); // start stopped
         shooterAngle.setPosition(1);
+        runTime = new ElapsedTime();
+        runTime.startTime();
         searchTimer = new ElapsedTime();
 
     }
@@ -125,6 +133,7 @@ public class sprTeleopBlue extends OpMode {
     @Override
     public void loop() {
         //Call this once per loop
+        led();
         updateTurretTracking();
         updateArmShooter();
         follower.update();
@@ -138,10 +147,10 @@ public class sprTeleopBlue extends OpMode {
                     true // Robot Centric
         );
         if (gamepad1.rightStickButtonWasPressed()) {
-            fastModeMultiplier = .5;
+            fastModeMultiplier = 1;
         }
         if (gamepad1.rightStickButtonWasReleased()) {
-            fastModeMultiplier = .9;
+            fastModeMultiplier = .5;
         }
         if (gamepad1.aWasPressed()) {
             fireArmNonBlocking(arm1);
@@ -163,13 +172,14 @@ public class sprTeleopBlue extends OpMode {
                 intake.setPower(1);
             }
             if (gamepad1.dpadRightWasPressed()) {
-                motorVel = 1120;
+                motorVel = 1180;
                 outtake1.setVelocity(motorVel);
                 outtake2.setVelocity(motorVel);
-                shooterAngle.setPosition(.5);
+                shooterAngle.setPosition(1);
+
             }
             if(gamepad1.dpadLeftWasPressed()){
-                motorVel = 1350;
+                motorVel = 1300;
                 outtake1.setVelocity(motorVel);
                 outtake2.setVelocity(motorVel);
                 shooterAngle.setPosition(.4);
@@ -199,6 +209,19 @@ public class sprTeleopBlue extends OpMode {
             }
             if (gamepad1.yWasPressed()) {
                 shootInOrder(22);
+            }
+            if(gamepad2.rightBumperWasPressed()){
+                    lift1.setPosition(1);
+                    lift2.setPosition(1);
+                    try {
+                        sleep(2000);
+                    } catch (InterruptedException e) {
+                        throw new RuntimeException(e);
+                    }
+                    while(true){
+                        leftFront.setPower(.5);
+                        rightFront.setPower(.5);
+                    }
             }
 //        String c1Color = detectColor(c1);
 //        String c2Color = detectColor(c2);
@@ -365,8 +388,8 @@ public class sprTeleopBlue extends OpMode {
         }
 
         int pos = turret.getCurrentPosition();
-        boolean atLeftLimit  = pos <= -995;
-        boolean atRightLimit = pos >=  995;
+        boolean atLeftLimit  = pos <= -550;
+        boolean atRightLimit = pos >=  600;
 
         double power = 0;
 
@@ -458,6 +481,21 @@ public class sprTeleopBlue extends OpMode {
                     break;
                 }
             }
+        }
+    }
+    public void led(){
+        if(!detectColor1(c1).equals("NONE") && !detectColor2(c2).equals("NONE") && !detectColor3(c3).equals("NONE")){
+            ledLights.setPattern(RevBlinkinLedDriver.BlinkinPattern.STROBE_RED);
+        }
+        else{
+            ledLights.setPattern(RevBlinkinLedDriver.BlinkinPattern.GREEN);
+        }
+        double seconds = runTime.seconds();
+        if(seconds >= 110){
+            ledLights.setPattern(RevBlinkinLedDriver.BlinkinPattern.STROBE_WHITE);
+        }
+        else if(seconds >= 100){
+            ledLights.setPattern(RevBlinkinLedDriver.BlinkinPattern.SHOT_BLUE);
         }
     }
 
