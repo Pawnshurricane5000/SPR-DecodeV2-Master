@@ -18,7 +18,7 @@ import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.ColorSensor;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
-import com.qualcomm.robotcore.hardware.DcMotorSimple;
+import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DistanceSensor;
 import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.util.ElapsedTime;
@@ -37,7 +37,7 @@ public class sprTeleopBlue extends OpMode {
     private RevBlinkinLedDriver ledLights;
     private double maxVelocityOuttake = 2400;
     private double F = 32767.0 / maxVelocityOuttake;
-    private double kP = F * 1.2;
+    private double kP = F * 5;
     private double kI = 0;
     private double kD = 0;
     private Follower follower;
@@ -46,7 +46,7 @@ public class sprTeleopBlue extends OpMode {
     private ColorSensor c1, c2, c3;
     private Servo fanRotate, cam, park1, park2, arm1, arm2, arm3, shooterAngle, lift1, lift2;
     private DcMotorEx outtake1, backspinRoller, outtake2, turret;
-    private DcMotorSimple intake, rightFront, leftFront, rightRear, leftRear;
+    private DcMotorEx intake, rightFront, leftFront, rightRear, leftRear;
     private Supplier<PathChain> pathChain1, pathChain2;
     private ElapsedTime tagLostTimer = new ElapsedTime();
 
@@ -82,11 +82,11 @@ public class sprTeleopBlue extends OpMode {
         c3 = hardwareMap.get(ColorSensor.class, "c3");
         lift1 = hardwareMap.get(Servo.class, "lift1");
         lift2 = hardwareMap.get(Servo.class, "lift2");
-        leftFront = hardwareMap.get(DcMotorSimple.class, "leftFront");
-        leftRear = hardwareMap.get(DcMotorSimple.class, "leftRear");
-        rightRear = hardwareMap.get(DcMotorSimple.class, "rightRear");
-        rightFront = hardwareMap.get(DcMotorSimple.class, "rightFront");
-        intake = hardwareMap.get(DcMotorSimple.class, "intake");
+        leftFront = hardwareMap.get(DcMotorEx.class, "leftFront");
+        leftRear = hardwareMap.get(DcMotorEx.class, "leftRear");
+        rightRear = hardwareMap.get(DcMotorEx.class, "rightRear");
+        rightFront = hardwareMap.get(DcMotorEx.class, "rightFront");
+        intake = hardwareMap.get(DcMotorEx.class, "intake");
         pathChain1 = () -> follower.pathBuilder() //Lazy Curve Generation
                 .addPath(new Path(new BezierLine(follower::getPose, new Pose(59, 18))))
                 .setHeadingInterpolation(HeadingInterpolator.linearFromPoint(follower::getHeading, Math.toRadians(294), 0.8))
@@ -99,13 +99,13 @@ public class sprTeleopBlue extends OpMode {
         c2.enableLed(true);
         c3.enableLed(true);
         limelight.pipelineSwitch(7);
-        turret.setDirection(DcMotorSimple.Direction.FORWARD); // or REVERSE if needed
+        turret.setDirection(DcMotorEx.Direction.FORWARD); // or REVERSE if needed
         turret.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
         turret.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         turret.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         limelight.setPollRateHz(30); // This sets how often we ask Limelight for data (100 times per second)
         limelight.start();
-        outtake2.setDirection(DcMotorSimple.Direction.REVERSE);
+        outtake2.setDirection(DcMotorEx.Direction.REVERSE);
         outtake1.setVelocityPIDFCoefficients(kP, kI, kD, F);
         outtake2.setVelocityPIDFCoefficients(kP, kI, kD, F);
 
@@ -146,12 +146,12 @@ public class sprTeleopBlue extends OpMode {
                     -gamepad1.right_stick_x * fastModeMultiplier,
                     true // Robot Centric
         );
-        if (gamepad1.rightStickButtonWasPressed()) {
-            fastModeMultiplier = 1;
+        if (gamepad1.right_stick_button) {
+            fastModeMultiplier = 1.0;   // Turbo while holding
+        } else {
+            fastModeMultiplier = 0.45;   // Normal when not holding
         }
-        if (gamepad1.rightStickButtonWasReleased()) {
-            fastModeMultiplier = .5;
-        }
+
         if (gamepad1.aWasPressed()) {
             fireArmNonBlocking(arm1);
         }
@@ -162,13 +162,13 @@ public class sprTeleopBlue extends OpMode {
                 fireArmNonBlocking(arm3);
             }
             if (gamepad1.left_trigger > 0) {
-                intake.setDirection(DcMotorSimple.Direction.REVERSE);
+                intake.setDirection(DcMotorEx.Direction.REVERSE);
                 intake.setPower(1);
             } else if (gamepad1.left_trigger <= 0) {
                 intake.setPower(0);
             }
             if (gamepad1.right_trigger > 0) {
-                intake.setDirection(DcMotorSimple.Direction.FORWARD);
+                intake.setDirection(DcMotorEx.Direction.FORWARD);
                 intake.setPower(1);
             }
             if (gamepad1.dpadRightWasPressed()) {
@@ -182,7 +182,7 @@ public class sprTeleopBlue extends OpMode {
                 motorVel = 1300;
                 outtake1.setVelocity(motorVel);
                 outtake2.setVelocity(motorVel);
-                shooterAngle.setPosition(.4);
+                shooterAngle.setPosition(.7);
             }
             if (gamepad1.leftStickButtonWasPressed()) {
                 outtake1.setPower(0);
@@ -199,7 +199,7 @@ public class sprTeleopBlue extends OpMode {
                 outtake2.setVelocity(motorVel);
             }
             if (gamepad2.dpadUpWasPressed()) {
-                shooterAngle.setPosition(.7);
+                shooterAngle.setPosition(.8);
             }
             if (gamepad2.dpadDownWasPressed()) {
                 shooterAngle.setPosition(1);

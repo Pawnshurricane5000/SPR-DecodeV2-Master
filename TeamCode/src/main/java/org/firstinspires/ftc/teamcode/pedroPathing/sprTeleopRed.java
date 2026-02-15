@@ -1,5 +1,7 @@
 package org.firstinspires.ftc.teamcode.pedroPathing;
 
+import static java.lang.Thread.sleep;
+
 import android.graphics.Color;
 
 import com.bylazar.configurables.annotations.Configurable;
@@ -10,152 +12,56 @@ import com.pedropathing.geometry.Pose;
 import com.pedropathing.paths.HeadingInterpolator;
 import com.pedropathing.paths.Path;
 import com.pedropathing.paths.PathChain;
-import com.qualcomm.hardware.limelightvision.LLResult;
 import com.qualcomm.hardware.limelightvision.Limelight3A;
 import com.qualcomm.robotcore.eventloop.opmode.OpMode;
 import com.qualcomm.robotcore.eventloop.opmode.TeleOp;
 import com.qualcomm.robotcore.hardware.ColorSensor;
 import com.qualcomm.robotcore.hardware.DcMotor;
 import com.qualcomm.robotcore.hardware.DcMotorEx;
+import com.qualcomm.robotcore.hardware.DcMotorEx;
 import com.qualcomm.robotcore.hardware.DcMotorSimple;
 import com.qualcomm.robotcore.hardware.DistanceSensor;
 import com.qualcomm.robotcore.hardware.Servo;
 import com.qualcomm.robotcore.util.ElapsedTime;
-
+import com.qualcomm.hardware.rev.RevBlinkinLedDriver;
 import org.firstinspires.ftc.robotcore.external.navigation.DistanceUnit;
 
 import java.util.function.Supplier;
+import com.qualcomm.hardware.limelightvision.LLResult;
 
 @Configurable
 @TeleOp
 public class sprTeleopRed extends OpMode {
     // Field coordinates for your goal tag center (in same units as Pedro follower)
-    private static final double TAG_X = 6.0;
-    private static final double TAG_Y = 144.0;
-
-    // Turret encoder limits you measured
-    private static final int TURRET_MIN_TICKS = -1000;
-    private static final int TURRET_MAX_TICKS =  1000;
-
-    // Motor/gear
-    private static final double TICKS_PER_REV = 537.7;
-    private static final double GEAR_RATIO    = 1.0; // change if you have gearing
-    private double lastTurretErrorTicks = 0;
-
+    private ElapsedTime runTime = new ElapsedTime();
     private double searchDirection = 1.0; // +1 = right, -1 = left
-    private static final double SEARCH_POWER = .5;
-    boolean turretLocked = false;
-
-
-    boolean centering = false;
-    private static final double TARGET_X = 2;
-    private static final double TARGET_Y = 135;
-    private double lastErrorDeg = 0;// start big so you SEE motion
-    private static final int RIGHT_LIMIT = 800;  // ticks – set from your tests
-    private static final double KP_TRACK = 0.04;
-    private static final double MAX_TRACK_POWER = 0.5;
-    private static final double CENTER_DEADBAND_DEG = 1.0;
-    private boolean scanningRight = true;
-    // use your real value here:
-    private static final double TURRET_KP = 0.015;  // from 0.04 → HALF
-    private static final double TURRET_KD = 0.002;  // from 0.004 → HALF
-
-
-    private static final double TURRET_MAX_POWER = 0.25;
-    private static final double TICKS_PER_DEGREE = (TICKS_PER_REV * GEAR_RATIO) / 360.0;
-
-    // limits in TICKS, not "random 0–250"
-    // Turret encoder limits
-    private double lastTurretError = 0;
-    private static final double KP = 0.012;
-    private static final double KD = 0.008;
-
-    private static final int TURRET_MIN = -1000;
-    private static final int TURRET_MAX = 1000;
-
-    // Small movement step while searching
-    static int SEARCH_STEP = 10;
-
-
-    static final double TX_CENTER_THRESHOLD = 1.5;
-    static final int AIM_STEP = 5;       // slower when detected
-
-
+    private RevBlinkinLedDriver ledLights;
     private double maxVelocityOuttake = 2400;
     private double F = 32767.0 / maxVelocityOuttake;
-    private double kP = F * .1;
+    private double kP = F * 5;
     private double kI = 0;
     private double kD = 0;
-
-    private double Ftur = 32767.0 / maxVelocityOuttake;
-    private double kPtur = F * .1;
-    private double kItur = kP * .1;
-    private double kDtur = 0;
     private Follower follower;
-    private int[] c1Def = {713, 1311, 1164};
-    private int[] c2Def = {392, 895, 767};
-    private int[] c3Def = {461, 895, 796};
-    private static final int MIN_TOTAL = 1700; // increase for bright floor
-
-    private static final int BALL_PRESENT_MIN = 3000;  // higher because sideways
-    private static final double GREEN_DOMINANCE = 0.45;
-    private static final double PURPLE_RB_MIN = 0.68;
 
     private Limelight3A limelight;
     private ColorSensor c1, c2, c3;
-    private Servo fanRotate, cam, park1, park2, arm1, arm2, arm3, shooterAngle;
+    private Servo fanRotate, cam, park1, park2, arm1, arm2, arm3, shooterAngle, lift1, lift2;
     private DcMotorEx outtake1, backspinRoller, outtake2, turret;
-    private DcMotorSimple intake, rightFront, leftFront, rightRear, leftRear;
-    public static Pose startingPose; //See ExampleAuto to understand how to use this
-    private boolean automatedDrive, isCam;
+    private DcMotorEx intake, rightFront, leftFront, rightRear, leftRear;
     private Supplier<PathChain> pathChain1, pathChain2;
-    private TelemetryManager telemetryM;
-    private Integer lockedTagId = null;
-    private static final double VISION_BLEND = 0.05; // small weight for tx correction
     private ElapsedTime tagLostTimer = new ElapsedTime();
-    private static final double TAG_LOST_TIMEOUT = 0.4; // seconds     // proportional gain
-    private double turretKd = 0.008;      // derivative gain
-    private double countsPerDegree = 5.56; // adjust for your motor/gearbox
-    private double turretMin = 0;      // min encoder count
-    private double turretMax = 250;
-    // scanning power when no tag// max encoder count
-    private double turretMaxVel = 500;    // max velocity (encoder counts per sec)
-    private double turretTarget = 0;
 
-    private double turretKp = 0.02;       // smaller gain for smooth centering
-    double lastTx = 0;
     ElapsedTime artifactTimer = new ElapsedTime();
     boolean artifactRunning = false;
     int artifactState = 0;
 
 
-    // Turret limits (ENCODER TICKS)
 
-    private double lastTurretVelocity = 0;
-
-    // Tracking
-    private double turretTargetTicks = 0;
-    private double lastError = 0;
-    private boolean slowMode = false;
-    private int turretPos = 0;
     private ElapsedTime searchTimer = new ElapsedTime();
-    private boolean searching = false;
-    private double searchPower = 0.15;
 
-    private double currPosFan = .05, camPos = 1, currRelease = -.01;
-    private double fanPos1 = .1, fanPos2 = .145, fanPos3 = .195, fanPos4 = .24;
-    private double upPos1 = .075, upPos2 = .125, upPos3 = .17;
-    private boolean x = true;
-
-    private boolean x2 = true;
-    private int count = 1, count3 = 1, targetVel = 1150, rollerVel = 1250;
-    private int count2 = 1;
     private int motorVel = 0;
-    private int angle = 0;
     private double fastModeMultiplier = .3;
 
-    // Turret constants
-    private static final double TURRET_TICKS_PER_DEGREE = 5.56; // your motor/gear setup
 
 
     @Override
@@ -163,6 +69,7 @@ public class sprTeleopRed extends OpMode {
         follower = Constants.createFollower(hardwareMap);
         follower.setStartingPose(new Pose(60, 6, Math.toRadians(-90)));
         follower.update();
+        ledLights = hardwareMap.get(RevBlinkinLedDriver.class, "ledLights");
         arm1 = hardwareMap.get(Servo.class, "arm1");
         arm2 = hardwareMap.get(Servo.class, "arm2");
         arm3 = hardwareMap.get(Servo.class, "arm3");
@@ -174,11 +81,13 @@ public class sprTeleopRed extends OpMode {
         c1 = hardwareMap.get(ColorSensor.class, "c1");
         c2 = hardwareMap.get(ColorSensor.class, "c2");
         c3 = hardwareMap.get(ColorSensor.class, "c3");
-        leftFront = hardwareMap.get(DcMotorSimple.class, "leftFront");
-        leftRear = hardwareMap.get(DcMotorSimple.class, "leftRear");
-        rightRear = hardwareMap.get(DcMotorSimple.class, "rightRear");
-        rightFront = hardwareMap.get(DcMotorSimple.class, "rightFront");
-        intake = hardwareMap.get(DcMotorSimple.class, "intake");
+        lift1 = hardwareMap.get(Servo.class, "lift1");
+        lift2 = hardwareMap.get(Servo.class, "lift2");
+        leftFront = hardwareMap.get(DcMotorEx.class, "leftFront");
+        leftRear = hardwareMap.get(DcMotorEx.class, "leftRear");
+        rightRear = hardwareMap.get(DcMotorEx.class, "rightRear");
+        rightFront = hardwareMap.get(DcMotorEx.class, "rightFront");
+        intake = hardwareMap.get(DcMotorEx.class, "intake");
         pathChain1 = () -> follower.pathBuilder() //Lazy Curve Generation
                 .addPath(new Path(new BezierLine(follower::getPose, new Pose(59, 18))))
                 .setHeadingInterpolation(HeadingInterpolator.linearFromPoint(follower::getHeading, Math.toRadians(294), 0.8))
@@ -190,14 +99,14 @@ public class sprTeleopRed extends OpMode {
         c1.enableLed(true);
         c2.enableLed(true);
         c3.enableLed(true);
-        limelight.pipelineSwitch(7);
-        turret.setDirection(DcMotorSimple.Direction.FORWARD); // or REVERSE if needed
+        limelight.pipelineSwitch(8);
+        turret.setDirection(DcMotorEx.Direction.REVERSE); // or REVERSE if needed
         turret.setMode(DcMotor.RunMode.STOP_AND_RESET_ENCODER);
         turret.setMode(DcMotor.RunMode.RUN_USING_ENCODER);
         turret.setZeroPowerBehavior(DcMotor.ZeroPowerBehavior.BRAKE);
         limelight.setPollRateHz(30); // This sets how often we ask Limelight for data (100 times per second)
         limelight.start();
-        outtake2.setDirection(DcMotorSimple.Direction.REVERSE);
+        outtake2.setDirection(DcMotorEx.Direction.REVERSE);
         outtake1.setVelocityPIDFCoefficients(kP, kI, kD, F);
         outtake2.setVelocityPIDFCoefficients(kP, kI, kD, F);
 
@@ -209,11 +118,15 @@ public class sprTeleopRed extends OpMode {
         //In order to use float mode, add .useBrakeModeInTeleOp(true); to your Drivetrain Constants in Constant.java (for Mecanum)
         //If you don't pass anything in, it uses the default (false)
         follower.startTeleopDrive();
+        lift1.setPosition(0);
+        lift2.setPosition(0);
         arm1.setPosition(0);
         arm2.setPosition(0);
         arm3.setPosition(0);
         turret.setPower(0); // start stopped
         shooterAngle.setPosition(1);
+        runTime = new ElapsedTime();
+        runTime.startTime();
         searchTimer = new ElapsedTime();
 
     }
@@ -221,81 +134,96 @@ public class sprTeleopRed extends OpMode {
     @Override
     public void loop() {
         //Call this once per loop
+        led();
         updateTurretTracking();
         updateArmShooter();
         follower.update();
-            //Make the last parameter false for field-centric
-            //In case the drivers want to use a "slowMode" you can scale the vectors
-            //This is the normal version to use in the TeleOp
+        //Make the last parameter false for field-centric
+        //In case the drivers want to use a "slowMode" you can scale the vectors
+        //This is the normal version to use in the TeleOp
         follower.setTeleOpDrive(
-                    -gamepad1.left_stick_y * fastModeMultiplier,
-                    -gamepad1.left_stick_x * fastModeMultiplier,
-                    -gamepad1.right_stick_x * fastModeMultiplier,
-                    true // Robot Centric
+                -gamepad1.left_stick_y * fastModeMultiplier,
+                -gamepad1.left_stick_x * fastModeMultiplier,
+                -gamepad1.right_stick_x * fastModeMultiplier,
+                true // Robot Centric
         );
-        if (gamepad1.rightStickButtonWasPressed()) {
-            fastModeMultiplier = .5;
+        if (gamepad1.right_stick_button) {
+            fastModeMultiplier = 1.0;   // Turbo while holding
+        } else {
+            fastModeMultiplier = 0.45;   // Normal when not holding
         }
-        if (gamepad1.rightStickButtonWasReleased()) {
-            fastModeMultiplier = .9;
-        }
+
         if (gamepad1.aWasPressed()) {
             fireArmNonBlocking(arm1);
         }
-            if (gamepad1.bWasPressed()) {
-                fireArmNonBlocking(arm2);
+        if (gamepad1.bWasPressed()) {
+            fireArmNonBlocking(arm2);
+        }
+        if (gamepad1.xWasPressed()) {
+            fireArmNonBlocking(arm3);
+        }
+        if (gamepad1.left_trigger > 0) {
+            intake.setDirection(DcMotorEx.Direction.REVERSE);
+            intake.setPower(1);
+        } else if (gamepad1.left_trigger <= 0) {
+            intake.setPower(0);
+        }
+        if (gamepad1.right_trigger > 0) {
+            intake.setDirection(DcMotorEx.Direction.FORWARD);
+            intake.setPower(1);
+        }
+        if (gamepad1.dpadRightWasPressed()) {
+            motorVel = 1180;
+            outtake1.setVelocity(motorVel);
+            outtake2.setVelocity(motorVel);
+            shooterAngle.setPosition(1);
+
+        }
+        if(gamepad1.dpadLeftWasPressed()){
+            motorVel = 1300;
+            outtake1.setVelocity(motorVel);
+            outtake2.setVelocity(motorVel);
+            shooterAngle.setPosition(.7);
+        }
+        if (gamepad1.leftStickButtonWasPressed()) {
+            outtake1.setPower(0);
+            outtake2.setPower(0);
+        }
+        if (gamepad1.dpadUpWasPressed()) {
+            motorVel += 50;
+            outtake1.setVelocity(motorVel);
+            outtake2.setVelocity(motorVel);
+        }
+        if (gamepad1.dpadDownWasPressed()) {
+            motorVel -= 50;
+            outtake1.setVelocity(motorVel);
+            outtake2.setVelocity(motorVel);
+        }
+        if (gamepad2.dpadUpWasPressed()) {
+            shooterAngle.setPosition(.8);
+        }
+        if (gamepad2.dpadDownWasPressed()) {
+            shooterAngle.setPosition(1);
+        }
+        if (gamepad1.right_trigger <= 0 && gamepad1.left_trigger <= 0) {
+            intake.setPower(0);
+        }
+        if (gamepad1.yWasPressed()) {
+            shootInOrder(22);
+        }
+        if(gamepad2.rightBumperWasPressed()){
+            lift1.setPosition(1);
+            lift2.setPosition(1);
+            try {
+                sleep(2000);
+            } catch (InterruptedException e) {
+                throw new RuntimeException(e);
             }
-            if (gamepad1.xWasPressed()) {
-                fireArmNonBlocking(arm3);
+            while(true){
+                leftFront.setPower(.5);
+                rightFront.setPower(.5);
             }
-            if (gamepad1.left_trigger > 0) {
-                intake.setDirection(DcMotorSimple.Direction.REVERSE);
-                intake.setPower(1);
-            } else if (gamepad1.left_trigger <= 0) {
-                intake.setPower(0);
-            }
-            if (gamepad1.right_trigger > 0) {
-                intake.setDirection(DcMotorSimple.Direction.FORWARD);
-                intake.setPower(1);
-            }
-            if (gamepad1.dpadRightWasPressed()) {
-                motorVel = 1120;
-                outtake1.setVelocity(motorVel);
-                outtake2.setVelocity(motorVel);
-                shooterAngle.setPosition(.5);
-            }
-            if(gamepad1.dpadLeftWasPressed()){
-                motorVel = 1350;
-                outtake1.setVelocity(motorVel);
-                outtake2.setVelocity(motorVel);
-                shooterAngle.setPosition(.4);
-            }
-            if (gamepad1.leftStickButtonWasPressed()) {
-                outtake1.setPower(0);
-                outtake2.setPower(0);
-            }
-            if (gamepad1.dpadUpWasPressed()) {
-                motorVel += 50;
-                outtake1.setVelocity(motorVel);
-                outtake2.setVelocity(motorVel);
-            }
-            if (gamepad1.dpadDownWasPressed()) {
-                motorVel -= 50;
-                outtake1.setVelocity(motorVel);
-                outtake2.setVelocity(motorVel);
-            }
-            if (gamepad2.dpadUpWasPressed()) {
-                shooterAngle.setPosition(.7);
-            }
-            if (gamepad2.dpadDownWasPressed()) {
-                shooterAngle.setPosition(1);
-            }
-            if (gamepad1.right_trigger <= 0 && gamepad1.left_trigger <= 0) {
-                intake.setPower(0);
-            }
-            if (gamepad1.yWasPressed()) {
-                shootInOrder(22);
-            }
+        }
 //        String c1Color = detectColor(c1);
 //        String c2Color = detectColor(c2);
 //        String c3Color = detectColor(c3);
@@ -318,6 +246,7 @@ public class sprTeleopRed extends OpMode {
         telemetry.addData("C3 Color", c3Color);
         telemetry.addData("Outtake 1: ", outtake1.getVelocity());
         telemetry.addData("Outtake 2", outtake2.getVelocity());
+        telemetry.addData("Pos", turret.getCurrentPosition());
         telemetry.update();
 
 
@@ -460,14 +389,14 @@ public class sprTeleopRed extends OpMode {
         }
 
         int pos = turret.getCurrentPosition();
-        boolean atLeftLimit  = pos <= -995;
-        boolean atRightLimit = pos >=  995;
+        boolean atLeftLimit  = pos <= -550;
+        boolean atRightLimit = pos >=  600;
 
         double power = 0;
 
         if (tagSeen) {
             // ---------------- VAW VISION TRACK ----------------
-            double errorDeg = -(tx - CENTER_OFFSET_DEG);
+            double errorDeg = (tx - CENTER_OFFSET_DEG);
 
             // HYSTERESIS LOCK
             if (!turretCentered && Math.abs(errorDeg) < CENTER_ENTER) {
@@ -553,6 +482,21 @@ public class sprTeleopRed extends OpMode {
                     break;
                 }
             }
+        }
+    }
+    public void led(){
+        if(!detectColor1(c1).equals("NONE") && !detectColor2(c2).equals("NONE") && !detectColor3(c3).equals("NONE")){
+            ledLights.setPattern(RevBlinkinLedDriver.BlinkinPattern.STROBE_RED);
+        }
+        else{
+            ledLights.setPattern(RevBlinkinLedDriver.BlinkinPattern.GREEN);
+        }
+        double seconds = runTime.seconds();
+        if(seconds >= 110){
+            ledLights.setPattern(RevBlinkinLedDriver.BlinkinPattern.STROBE_WHITE);
+        }
+        else if(seconds >= 100){
+            ledLights.setPattern(RevBlinkinLedDriver.BlinkinPattern.SHOT_BLUE);
         }
     }
 
