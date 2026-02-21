@@ -487,7 +487,7 @@ public class BlueAuto2Shoot6 extends OpMode {
             shootStep = 2;
         }
 
-        else if (shootStep == 2 && shootTimer.milliseconds() >= 100) {
+        else if (shootStep == 2 && shootTimer.milliseconds() >= 400) {
             arm2.setPosition(1);
             shootTimer.reset();
             shootStep = 3;
@@ -499,7 +499,7 @@ public class BlueAuto2Shoot6 extends OpMode {
             shootStep = 4;
         }
 
-        else if (shootStep == 4 && shootTimer.milliseconds() >= 100) {
+        else if (shootStep == 4 && shootTimer.milliseconds() >= 400) {
             arm3.setPosition(1);
             shootTimer.reset();
             shootStep = 5;

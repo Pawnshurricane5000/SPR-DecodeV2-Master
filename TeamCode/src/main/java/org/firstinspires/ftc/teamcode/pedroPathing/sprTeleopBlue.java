@@ -149,7 +149,7 @@ public class sprTeleopBlue extends OpMode {
         if (gamepad1.right_stick_button) {
             fastModeMultiplier = 1.0;   // Turbo while holding
         } else {
-            fastModeMultiplier = 0.45;   // Normal when not holding
+            fastModeMultiplier = .4;   // Normal when not holding
         }
 
         if (gamepad1.aWasPressed()) {

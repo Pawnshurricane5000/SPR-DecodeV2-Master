@@ -98,7 +98,7 @@ public class RedAuto2 extends OpMode {
     private final Pose startPose = new Pose(107, 131, Math.toRadians(270)); // Start Pose of our robot.
     private final Pose launchPose = new Pose(81,105, Math.toRadians(270));
     private final Pose order3 = new Pose(89, 79, Math.toRadians(0)); // Middle (Second Set) of Artifacts from the Spike Mark.
-    private final Pose order32 = new Pose(123, 79, Math.toRadians(0)); // Middle (Second Set) of Artifacts from the Spike Mark.
+    private final Pose order32 = new Pose(122, 79, Math.toRadians(0)); // Middle (Second Set) of Artifacts from the Spike Mark.
     private final Pose order2 = new Pose(89, 55.5, Math.toRadians(0)); // Middle (Second Set) of Artifacts from the Spike Mark.
     private final Pose order2s = new Pose(40,78.5,Math.toRadians(0));
     private final Pose order21 = new Pose(30, 78.5, Math.toRadians(0)); // Middle (Second Set) of Artifacts from the Spike Mark.
